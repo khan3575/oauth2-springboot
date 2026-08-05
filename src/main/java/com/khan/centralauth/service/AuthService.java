@@ -10,17 +10,20 @@ import java.util.UUID;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import com.khan.centralauth.dto.LoginRequest;
 import com.khan.centralauth.dto.RegisterRequest;
 import com.khan.centralauth.entity.AppUser;
 import com.khan.centralauth.entity.AuditLog;
 import com.khan.centralauth.entity.Credential;
 import com.khan.centralauth.entity.EmailVerificationToken;
+import com.khan.centralauth.entity.Session;
 import com.khan.centralauth.entity.enums.CredentialType;
 import com.khan.centralauth.entity.enums.UserStatus;
 import com.khan.centralauth.repository.AppUserRepository;
 import com.khan.centralauth.repository.AuditLogRepository;
 import com.khan.centralauth.repository.CredentialRepository;
 import com.khan.centralauth.repository.EmailVerificationTokenRepository;
+import com.khan.centralauth.repository.SessionRepository;
 
 import jakarta.transaction.Transactional;
 
@@ -28,17 +31,20 @@ import jakarta.transaction.Transactional;
 @Service
 public class AuthService {
     private final AppUserRepository appUserRepository;
+    private final SessionRepository sessionRepository;
     private final CredentialRepository credentialRepository;
     private final EmailVerificationTokenRepository emailVerificationTokenRepository;
     private final AuditLogRepository auditLogRepository;
     private final PasswordEncoder passwordEncoder;
 
     public AuthService(AppUserRepository appUserRepository,
+                       SessionRepository sessionRepository,
                        CredentialRepository credentialRepository,
                        EmailVerificationTokenRepository emailVerificationTokenRepository,
                        AuditLogRepository auditLogRepository,
                        PasswordEncoder passwordEncoder) {
         this.appUserRepository = appUserRepository;
+        this.sessionRepository = sessionRepository;
         this.credentialRepository = credentialRepository;
         this.emailVerificationTokenRepository = emailVerificationTokenRepository;
         this.auditLogRepository = auditLogRepository;
@@ -87,6 +93,7 @@ public class AuthService {
             .build();
 
         emailVerificationTokenRepository.save(emailVerificationToken);
+        System.out.println("Verification link for " + normalizedEmail + ": /api/auth/verify-email?token=" + rawToken);
 
         // now audit loging
 
@@ -140,5 +147,53 @@ public class AuthService {
         auditLogRepository.save(auditLog);
 
 
+    }
+
+    @Transactional
+    public String login(LoginRequest request, String userAgent, String ipAddress)
+    {
+        String normalizedEmail = request.getEmail().trim().toLowerCase();
+        OffsetDateTime now = OffsetDateTime.now();
+
+
+        AppUser user = appUserRepository.findByEmail(normalizedEmail).orElseThrow(() -> new IllegalArgumentException("Login failed"));
+        Credential credential = credentialRepository.findByUserIdAndType(user.getId(),CredentialType.PASSWORD).orElse(null);
+
+        boolean passwordMatches = (credential != null && credential.getSecretHash()!= null && passwordEncoder.matches(request.getPassword(), credential.getSecretHash()));
+
+        if(user == null || credential == null || !passwordMatches || user.getStatus() != UserStatus.ACTIVE || !user.getEmailVerified())
+        {
+            AuditLog failureLog = AuditLog.builder()
+                .userId(user != null? user.getId(): null)
+                .eventType("login_failure")
+                .ipAddress(ipAddress)
+                .userAgent(userAgent)
+                .build();
+            auditLogRepository.save(failureLog);
+            throw new IllegalArgumentException("Login failed");
+        }
+
+        credential.setLastUsedAt(now);
+        credentialRepository.save(credential);
+
+        String rawToken = UUID.randomUUID().toString();
+        Session session = Session.builder()
+            .userId(user.getId())
+            .tokenHash(hashToken(rawToken))
+            .expiresAt(now.plusDays(7))
+            .userAgent(userAgent)
+            .ipAddress(ipAddress)
+            .build();
+        sessionRepository.save(session);
+
+        AuditLog successLog = AuditLog.builder()
+            .userId(user.getId())
+            .eventType("login_success")
+            .ipAddress(ipAddress)
+            .userAgent(userAgent)
+            .build();
+        auditLogRepository.save(successLog);
+
+        return rawToken;
     }
 }
