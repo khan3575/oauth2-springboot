@@ -102,7 +102,7 @@ public class AuthService {
 
 
     private String hashToken(String rawToken) {
-        // TODO Auto-generated method stub
+        
         try{
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] hash = digest.digest(rawToken.getBytes(StandardCharsets.UTF_8));
