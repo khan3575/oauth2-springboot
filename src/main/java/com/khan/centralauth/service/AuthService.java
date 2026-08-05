@@ -114,4 +114,35 @@ public class AuthService {
         }
     }
 
+    @Transactional
+    public void verifyEmail(String rawToken)
+    {
+
+        // hash the raw incoming raw token
+        String tokenHash = hashToken(rawToken);
+        OffsetDateTime now = OffsetDateTime.now();
+        // look up for the EmailVerificationToken
+        EmailVerificationToken token = emailVerificationTokenRepository.findByTokenHash(tokenHash).orElseThrow(() -> new IllegalArgumentException("Token verification failed"));
+
+        if(token.getExpiresAt().isBefore(now) || token.getUsedAt() != null)
+        {
+            throw new IllegalArgumentException("Token verification failed");
+        }
+        AppUser user = appUserRepository.findById(token.getUserId()).orElseThrow(() -> new IllegalArgumentException("User not found"));
+        user.setEmailVerified(true);
+        user.setStatus(UserStatus.ACTIVE);
+        appUserRepository.save(user);
+
+        token.setUsedAt(now);
+        emailVerificationTokenRepository.save(token);
+
+        AuditLog auditLog = AuditLog.builder()
+            .userId(user.getId())
+            .eventType("email_verified")
+            .createdAt(now)
+            .build();
+        auditLogRepository.save(auditLog);
+
+
+    }
 }
