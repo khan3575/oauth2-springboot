@@ -13,18 +13,15 @@ import org.springframework.stereotype.Service;
 
 import lombok.extern.slf4j.Slf4j;
 
-import com.khan.centralauth.config.CookieUtils;
 import com.khan.centralauth.dto.LoginRequest;
 import com.khan.centralauth.dto.RegisterRequest;
 import com.khan.centralauth.entity.AppUser;
-import com.khan.centralauth.entity.AuditLog;
 import com.khan.centralauth.entity.Credential;
 import com.khan.centralauth.entity.EmailVerificationToken;
 import com.khan.centralauth.entity.Session;
 import com.khan.centralauth.entity.enums.CredentialType;
 import com.khan.centralauth.entity.enums.UserStatus;
 import com.khan.centralauth.repository.AppUserRepository;
-import com.khan.centralauth.repository.AuditLogRepository;
 import com.khan.centralauth.repository.CredentialRepository;
 import com.khan.centralauth.repository.EmailVerificationTokenRepository;
 import com.khan.centralauth.repository.SessionRepository;
@@ -101,7 +98,7 @@ public class AuthService {
             .build();
 
         emailVerificationTokenRepository.save(emailVerificationToken);
-        log.debug("Verification link for {}: /api/auth/verify-email?token={}", normalizedEmail, rawToken);
+        log.info("Verification link for {}: /api/auth/verify-email?token={}", normalizedEmail, rawToken);
 
         // now audit loging
         auditLogService.record(user.getId(), "register", null, null);
@@ -135,7 +132,7 @@ public class AuthService {
 
         if(token.getExpiresAt().isBefore(now) || token.getUsedAt() != null)
         {
-            
+            auditLogService.recordIndependent(null, "email_verification_failed", null, null);
             throw new IllegalArgumentException("Token verification failed");
         }
         AppUser user = appUserRepository.findById(token.getUserId()).orElseThrow(() -> new IllegalArgumentException("User not found"));
@@ -193,45 +190,34 @@ public class AuthService {
         return rawToken;
     }
 
-    public Optional<UUID> validateSession(String rawToken)
-    {
-        if(rawToken == null || rawToken.isBlank())
-        {
-            return Optional.empty();
-        }
-        String tokenHash = hashToken(rawToken);
+    public Optional<UUID> validateSession(String rawToken) {
         OffsetDateTime now = OffsetDateTime.now();
-
-        return sessionRepository.findByTokenHash(tokenHash)
-            .filter(session -> session.getRevokedAt() == null )
-            .filter(session -> session.getExpiresAt().isAfter(now))
-            .map(session -> session.getUserId());
-        
+        return findSessionByRawToken(rawToken)
+        .filter(session -> session.getRevokedAt() == null)
+        .filter(session -> session.getExpiresAt().isAfter(now))
+        .map(session -> session.getUserId());
     }
 
-    @Transactional
-    public void logout(String rawToken, UUID userId, String ipAddress, String userAgent)
-    {
-        
-        if(rawToken == null || rawToken.isBlank())
-        {
-            log.debug("Logout attempted with an empty token for user {}", userId);
-            return;
+    private Optional<Session> findSessionByRawToken(String rawToken) {
+        if (rawToken == null || rawToken.isBlank()) {
+            return Optional.empty();
         }
-        String tokenHash = hashToken(rawToken);
-        OffsetDateTime now = OffsetDateTime.now();
-
-        Session session = sessionRepository.findByTokenHash(tokenHash).orElseThrow(
-            () ->{
+        return sessionRepository.findByTokenHash(hashToken(rawToken));
+    }
+    @Transactional
+    public void logout(String rawToken, UUID userId, String ipAddress, String userAgent) {
+        Session session = findSessionByRawToken(rawToken)
+            .orElseThrow(() -> {
                 log.warn("Logout attempted with an invalid token for user {}", userId);
                 auditLogService.recordIndependent(userId, "logout_failure", ipAddress, userAgent);
                 throw new IllegalArgumentException("Invalid session token");
-            }
-        );
-        session.setRevokedAt(now);
-        auditLogService.record(userId, "logout_success", ipAddress, userAgent);
-        sessionRepository.save(session);
-        log.info("Logout succeeded for user {}", userId);
+            });
 
+        session.setRevokedAt(OffsetDateTime.now());
+        sessionRepository.save(session);
+        auditLogService.record(userId, "logout_success", ipAddress, userAgent);
+        log.info("Logout succeeded for user {}", userId);
     }
+
+
 }

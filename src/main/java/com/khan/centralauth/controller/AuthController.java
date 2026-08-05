@@ -7,7 +7,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.web.bind.annotation.ExceptionHandler;
+
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -84,6 +84,13 @@ public class AuthController {
                                                     .getAuthentication()
                                                     .getPrincipal()         : null;
         authService.logout(cookieUtils.extractSessionCookie(request), userId, resolveClientIp(request), request.getHeader("User-Agent"));
-        return ResponseEntity.ok().build();
+        ResponseCookie cleared = ResponseCookie.from("SESSION", "")
+            .httpOnly(true)
+            .secure(true)
+            .sameSite("Lax")
+            .path("/")
+            .maxAge(0)
+            .build();
+        return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, cleared.toString()).build();
     }
 }
