@@ -3,7 +3,6 @@ package com.khan.centralauth.entity;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
-import jakarta.annotation.Generated;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
