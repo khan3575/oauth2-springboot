@@ -13,16 +13,16 @@ import com.khan.centralauth.service.AuthService;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 @Component
 public class SessionAuthenticationFilter extends OncePerRequestFilter {
     private final AuthService authService;
-    
-    public SessionAuthenticationFilter(AuthService authService) {
+    private final CookieUtils cookieUtils;
+    public SessionAuthenticationFilter(AuthService authService, CookieUtils cookieUtils) {
         this.authService = authService;
+        this.cookieUtils = cookieUtils;
     }
 
     @Override
@@ -31,7 +31,7 @@ public class SessionAuthenticationFilter extends OncePerRequestFilter {
         , FilterChain filterChain) throws ServletException, IOException 
     {
 
-        String rawToken = extractSessionCookie(request);
+        String rawToken = cookieUtils.extractSessionCookie(request);
 
         if(rawToken != null && !rawToken.isBlank())
         {
@@ -44,21 +44,7 @@ public class SessionAuthenticationFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
     
-    private String extractSessionCookie(HttpServletRequest request)
-    {
-        if(request.getCookies() == null)
-        {
-            return null;
-        }
-        for(Cookie cookie: request.getCookies())
-        {
-            if("SESSION".equals(cookie.getName()))
-            {
-                return cookie.getValue();
-            }
-        }
-        return null;
-    }
+    
     
 
 }

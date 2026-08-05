@@ -16,14 +16,12 @@ import lombok.extern.slf4j.Slf4j;
 import com.khan.centralauth.dto.LoginRequest;
 import com.khan.centralauth.dto.RegisterRequest;
 import com.khan.centralauth.entity.AppUser;
-import com.khan.centralauth.entity.AuditLog;
 import com.khan.centralauth.entity.Credential;
 import com.khan.centralauth.entity.EmailVerificationToken;
 import com.khan.centralauth.entity.Session;
 import com.khan.centralauth.entity.enums.CredentialType;
 import com.khan.centralauth.entity.enums.UserStatus;
 import com.khan.centralauth.repository.AppUserRepository;
-import com.khan.centralauth.repository.AuditLogRepository;
 import com.khan.centralauth.repository.CredentialRepository;
 import com.khan.centralauth.repository.EmailVerificationTokenRepository;
 import com.khan.centralauth.repository.SessionRepository;
@@ -38,22 +36,23 @@ public class AuthService {
     private final SessionRepository sessionRepository;
     private final CredentialRepository credentialRepository;
     private final EmailVerificationTokenRepository emailVerificationTokenRepository;
-    private final AuditLogRepository auditLogRepository;
     private final PasswordEncoder passwordEncoder;
+    private final AuditLogService auditLogService;
+    
 
 
     public AuthService(AppUserRepository appUserRepository,
                        SessionRepository sessionRepository,
                        CredentialRepository credentialRepository,
                        EmailVerificationTokenRepository emailVerificationTokenRepository,
-                       AuditLogRepository auditLogRepository,
-                       PasswordEncoder passwordEncoder) {
+                       PasswordEncoder passwordEncoder,
+                       AuditLogService auditLogService) {
         this.appUserRepository = appUserRepository;
         this.sessionRepository = sessionRepository;
         this.credentialRepository = credentialRepository;
         this.emailVerificationTokenRepository = emailVerificationTokenRepository;
-        this.auditLogRepository = auditLogRepository;
         this.passwordEncoder = passwordEncoder;
+        this.auditLogService = auditLogService;
     }
 
 
@@ -99,15 +98,10 @@ public class AuthService {
             .build();
 
         emailVerificationTokenRepository.save(emailVerificationToken);
-        log.debug("Verification link for {}: /api/auth/verify-email?token={}", normalizedEmail, rawToken);
+        log.info("Verification link for {}: /api/auth/verify-email?token={}", normalizedEmail, rawToken);
 
         // now audit loging
-
-        AuditLog auditLog = AuditLog.builder()
-            .userId(user.getId())
-            .eventType("register")
-            .build();
-        auditLogRepository.save(auditLog);
+        auditLogService.record(user.getId(), "register", null, null);
 
         log.info("New user registered: {}", user.getId());
     }
@@ -138,6 +132,7 @@ public class AuthService {
 
         if(token.getExpiresAt().isBefore(now) || token.getUsedAt() != null)
         {
+            auditLogService.recordIndependent(null, "email_verification_failed", null, null);
             throw new IllegalArgumentException("Token verification failed");
         }
         AppUser user = appUserRepository.findById(token.getUserId()).orElseThrow(() -> new IllegalArgumentException("User not found"));
@@ -148,12 +143,7 @@ public class AuthService {
         token.setUsedAt(now);
         emailVerificationTokenRepository.save(token);
 
-        AuditLog auditLog = AuditLog.builder()
-            .userId(user.getId())
-            .eventType("email_verified")
-            .build();
-        auditLogRepository.save(auditLog);
-
+        auditLogService.record(user.getId(), "email_verified", null, null);
         log.info("Email verified for user {}", user.getId());
     }
 
@@ -164,20 +154,19 @@ public class AuthService {
         OffsetDateTime now = OffsetDateTime.now();
 
 
-        AppUser user = appUserRepository.findByEmail(normalizedEmail).orElseThrow(() -> new IllegalArgumentException("Login failed"));
+        AppUser user = appUserRepository.findByEmail(normalizedEmail).orElseThrow(() -> {
+            
+            auditLogService.recordIndependent(null, "login_failure", ipAddress, userAgent);
+            log.warn("Login failed for unknown user with email {}", normalizedEmail);
+            throw new IllegalArgumentException("Login failed");
+        });
         Credential credential = credentialRepository.findByUserIdAndType(user.getId(),CredentialType.PASSWORD).orElse(null);
 
         boolean passwordMatches = (credential != null && credential.getSecretHash()!= null && passwordEncoder.matches(request.getPassword(), credential.getSecretHash()));
 
         if(user == null || credential == null || !passwordMatches || user.getStatus() != UserStatus.ACTIVE || !user.getEmailVerified())
         {
-            AuditLog failureLog = AuditLog.builder()
-                .userId(user != null? user.getId(): null)
-                .eventType("login_failure")
-                .ipAddress(ipAddress)
-                .userAgent(userAgent)
-                .build();
-            auditLogRepository.save(failureLog);
+            auditLogService.recordIndependent(user != null? user.getId(): null, "login_failure", ipAddress, userAgent);
             log.warn("Login failed for user {}", user != null ? user.getId() : "unknown");
             throw new IllegalArgumentException("Login failed");
         }
@@ -195,31 +184,40 @@ public class AuthService {
             .build();
         sessionRepository.save(session);
 
-        AuditLog successLog = AuditLog.builder()
-            .userId(user.getId())
-            .eventType("login_success")
-            .ipAddress(ipAddress)
-            .userAgent(userAgent)
-            .build();
-        auditLogRepository.save(successLog);
+        auditLogService.record(user.getId(), "login_success", ipAddress, userAgent);
 
         log.info("Login succeeded for user {}", user.getId());
         return rawToken;
     }
 
-    public Optional<UUID> validateSession(String rawToken)
-    {
-        if(rawToken == null || rawToken.isBlank())
-        {
+    public Optional<UUID> validateSession(String rawToken) {
+        OffsetDateTime now = OffsetDateTime.now();
+        return findSessionByRawToken(rawToken)
+        .filter(session -> session.getRevokedAt() == null)
+        .filter(session -> session.getExpiresAt().isAfter(now))
+        .map(session -> session.getUserId());
+    }
+
+    private Optional<Session> findSessionByRawToken(String rawToken) {
+        if (rawToken == null || rawToken.isBlank()) {
             return Optional.empty();
         }
-        String tokenHash = hashToken(rawToken);
-        OffsetDateTime now = OffsetDateTime.now();
-
-        return sessionRepository.findByTokenHash(tokenHash)
-            .filter(session -> session.getRevokedAt() == null )
-            .filter(session -> session.getExpiresAt().isAfter(now))
-            .map(session -> session.getUserId());
-        
+        return sessionRepository.findByTokenHash(hashToken(rawToken));
     }
+    @Transactional
+    public void logout(String rawToken, UUID userId, String ipAddress, String userAgent) {
+        Session session = findSessionByRawToken(rawToken)
+            .orElseThrow(() -> {
+                log.warn("Logout attempted with an invalid token for user {}", userId);
+                auditLogService.recordIndependent(userId, "logout_failure", ipAddress, userAgent);
+                throw new IllegalArgumentException("Invalid session token");
+            });
+
+        session.setRevokedAt(OffsetDateTime.now());
+        sessionRepository.save(session);
+        auditLogService.record(userId, "logout_success", ipAddress, userAgent);
+        log.info("Logout succeeded for user {}", userId);
+    }
+
+
 }
