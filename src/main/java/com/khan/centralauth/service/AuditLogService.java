@@ -19,8 +19,20 @@ public class AuditLogService {
         this.auditLogRepository = auditLogRepository;
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional
     public void record(UUID userId, String eventType, String ipAddress, String userAgent)
+    {
+        AuditLog auditLog = AuditLog.builder()
+            .userId(userId)
+            .eventType(eventType)
+            .ipAddress(ipAddress)
+            .userAgent(userAgent)
+            .build();
+        auditLogRepository.save(auditLog);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordIndependent(UUID userId, String eventType, String ipAddress, String userAgent)
     {
         AuditLog auditLog = AuditLog.builder()
             .userId(userId)
