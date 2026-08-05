@@ -29,7 +29,11 @@ public class SecurityConfig {
         http.csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(
                 auth -> auth
-                    .requestMatchers("/api/auth/**", "/error").permitAll()
+                    .requestMatchers("/api/auth/register"
+                    , "/api/auth/login"
+                    , "/api/auth/verify-email"
+                    , "/error").permitAll()
+                    .requestMatchers("/api/auth/logout").authenticated()
                     .anyRequest().authenticated()
             )
             .addFilterBefore(sessionAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

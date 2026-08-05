@@ -40,6 +40,7 @@ public class AuthService {
     private final EmailVerificationTokenRepository emailVerificationTokenRepository;
     private final AuditLogRepository auditLogRepository;
     private final PasswordEncoder passwordEncoder;
+    private final AuditLogService auditLogService;
 
 
     public AuthService(AppUserRepository appUserRepository,
@@ -47,13 +48,15 @@ public class AuthService {
                        CredentialRepository credentialRepository,
                        EmailVerificationTokenRepository emailVerificationTokenRepository,
                        AuditLogRepository auditLogRepository,
-                       PasswordEncoder passwordEncoder) {
+                       PasswordEncoder passwordEncoder,
+                       AuditLogService auditLogService) {
         this.appUserRepository = appUserRepository;
         this.sessionRepository = sessionRepository;
         this.credentialRepository = credentialRepository;
         this.emailVerificationTokenRepository = emailVerificationTokenRepository;
         this.auditLogRepository = auditLogRepository;
         this.passwordEncoder = passwordEncoder;
+        this.auditLogService = auditLogService;
     }
 
 
@@ -102,12 +105,7 @@ public class AuthService {
         log.debug("Verification link for {}: /api/auth/verify-email?token={}", normalizedEmail, rawToken);
 
         // now audit loging
-
-        AuditLog auditLog = AuditLog.builder()
-            .userId(user.getId())
-            .eventType("register")
-            .build();
-        auditLogRepository.save(auditLog);
+        auditLogService.record(user.getId(), "register", null, null);
 
         log.info("New user registered: {}", user.getId());
     }
@@ -148,12 +146,7 @@ public class AuthService {
         token.setUsedAt(now);
         emailVerificationTokenRepository.save(token);
 
-        AuditLog auditLog = AuditLog.builder()
-            .userId(user.getId())
-            .eventType("email_verified")
-            .build();
-        auditLogRepository.save(auditLog);
-
+        auditLogService.record(user.getId(), "email_verified", null, null);
         log.info("Email verified for user {}", user.getId());
     }
 
@@ -164,20 +157,19 @@ public class AuthService {
         OffsetDateTime now = OffsetDateTime.now();
 
 
-        AppUser user = appUserRepository.findByEmail(normalizedEmail).orElseThrow(() -> new IllegalArgumentException("Login failed"));
+        AppUser user = appUserRepository.findByEmail(normalizedEmail).orElseThrow(() -> {
+            
+            auditLogService.record(null, "login_failure", ipAddress, userAgent);
+            log.warn("Login failed for unknown user with email {}", normalizedEmail);
+            throw new IllegalArgumentException("Login failed");
+        });
         Credential credential = credentialRepository.findByUserIdAndType(user.getId(),CredentialType.PASSWORD).orElse(null);
 
         boolean passwordMatches = (credential != null && credential.getSecretHash()!= null && passwordEncoder.matches(request.getPassword(), credential.getSecretHash()));
 
         if(user == null || credential == null || !passwordMatches || user.getStatus() != UserStatus.ACTIVE || !user.getEmailVerified())
         {
-            AuditLog failureLog = AuditLog.builder()
-                .userId(user != null? user.getId(): null)
-                .eventType("login_failure")
-                .ipAddress(ipAddress)
-                .userAgent(userAgent)
-                .build();
-            auditLogRepository.save(failureLog);
+            auditLogService.record(user != null? user.getId(): null, "login_failure", ipAddress, userAgent);
             log.warn("Login failed for user {}", user != null ? user.getId() : "unknown");
             throw new IllegalArgumentException("Login failed");
         }
@@ -194,14 +186,8 @@ public class AuthService {
             .ipAddress(ipAddress)
             .build();
         sessionRepository.save(session);
-
-        AuditLog successLog = AuditLog.builder()
-            .userId(user.getId())
-            .eventType("login_success")
-            .ipAddress(ipAddress)
-            .userAgent(userAgent)
-            .build();
-        auditLogRepository.save(successLog);
+        
+        auditLogService.record(user.getId(), "login_success", ipAddress, userAgent);
 
         log.info("Login succeeded for user {}", user.getId());
         return rawToken;
