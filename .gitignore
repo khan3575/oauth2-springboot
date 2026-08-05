@@ -38,3 +38,7 @@ out/
 
 ### Local docs (internal planning, not shipped) ###
 local_doc/
+
+## log files
+
+logs/
