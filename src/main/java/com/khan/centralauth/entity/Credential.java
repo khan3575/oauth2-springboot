@@ -3,6 +3,9 @@ package com.khan.centralauth.entity;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
+
 import com.khan.centralauth.entity.enums.CredentialType;
 
 import jakarta.persistence.Column;
@@ -39,8 +42,11 @@ public class Credential {
     @Column(name="secret_hash", nullable = true)
     private String secretHash;
 
+    @CreationTimestamp
     @Column(name="created_at", nullable = false)
     private OffsetDateTime createdAt;
+
+
 
     @Column(name="last_used_at", nullable = true)
     private OffsetDateTime lastUsedAt;

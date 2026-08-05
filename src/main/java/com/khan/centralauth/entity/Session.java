@@ -3,6 +3,8 @@ package com.khan.centralauth.entity;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
+import org.hibernate.annotations.CreationTimestamp;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -47,6 +49,7 @@ public class Session {
     @Column(name = "ip", nullable = true)
     private String ipAddress;
 
+    @CreationTimestamp
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
 }

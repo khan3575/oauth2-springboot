@@ -75,7 +75,6 @@ public class AuthService {
             .userId(user.getId())
             .type(CredentialType.PASSWORD)
             .secretHash(passwordEncoder.encode(request.getPassword()))
-            .createdAt(now)
             .build();
         credential = credentialRepository.save(credential);
 
@@ -85,7 +84,6 @@ public class AuthService {
             .userId(user.getId())
             .tokenHash(hashToken(rawToken))
             .expiresAt(now.plusHours(24))
-            .createdAt(now)
             .build();
 
         emailVerificationTokenRepository.save(emailVerificationToken);
@@ -95,7 +93,6 @@ public class AuthService {
         AuditLog auditLog = AuditLog.builder()
             .userId(user.getId())
             .eventType("register")
-            .createdAt(now)
             .build();
         auditLogRepository.save(auditLog);
     }
@@ -139,7 +136,6 @@ public class AuthService {
         AuditLog auditLog = AuditLog.builder()
             .userId(user.getId())
             .eventType("email_verified")
-            .createdAt(now)
             .build();
         auditLogRepository.save(auditLog);
 
