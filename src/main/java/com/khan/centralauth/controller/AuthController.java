@@ -45,7 +45,7 @@ public class AuthController {
     public ResponseEntity<Void> login(@Valid @RequestBody LoginRequest loginRequest, HttpServletRequest request)
     {
         String rawToken = authService.login(loginRequest, request.getHeader("User-Agent"), resolveClientIp(request));
-        ResponseCookie cookie = ResponseCookie.from("session", rawToken)
+        ResponseCookie cookie = ResponseCookie.from("SESSION", rawToken)
             .httpOnly(true)
             .secure(true)
             .sameSite("Lax")

@@ -5,10 +5,13 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
 import java.util.HexFormat;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+
+import lombok.extern.slf4j.Slf4j;
 
 import com.khan.centralauth.dto.LoginRequest;
 import com.khan.centralauth.dto.RegisterRequest;
@@ -28,6 +31,7 @@ import com.khan.centralauth.repository.SessionRepository;
 import jakarta.transaction.Transactional;
 
 
+@Slf4j
 @Service
 public class AuthService {
     private final AppUserRepository appUserRepository;
@@ -36,6 +40,7 @@ public class AuthService {
     private final EmailVerificationTokenRepository emailVerificationTokenRepository;
     private final AuditLogRepository auditLogRepository;
     private final PasswordEncoder passwordEncoder;
+
 
     public AuthService(AppUserRepository appUserRepository,
                        SessionRepository sessionRepository,
@@ -61,7 +66,8 @@ public class AuthService {
         {
             // why return even though the user already exists?
             // This is to prevent the user from knowing whether the email is already registered or not.
-            return; 
+            log.debug("Registration attempted with an email that already exists");
+            return;
         }
         
         OffsetDateTime now = OffsetDateTime.now();
@@ -93,7 +99,7 @@ public class AuthService {
             .build();
 
         emailVerificationTokenRepository.save(emailVerificationToken);
-        System.out.println("Verification link for " + normalizedEmail + ": /api/auth/verify-email?token=" + rawToken);
+        log.debug("Verification link for {}: /api/auth/verify-email?token={}", normalizedEmail, rawToken);
 
         // now audit loging
 
@@ -102,6 +108,8 @@ public class AuthService {
             .eventType("register")
             .build();
         auditLogRepository.save(auditLog);
+
+        log.info("New user registered: {}", user.getId());
     }
 
 
@@ -146,7 +154,7 @@ public class AuthService {
             .build();
         auditLogRepository.save(auditLog);
 
-
+        log.info("Email verified for user {}", user.getId());
     }
 
     @Transactional
@@ -170,6 +178,7 @@ public class AuthService {
                 .userAgent(userAgent)
                 .build();
             auditLogRepository.save(failureLog);
+            log.warn("Login failed for user {}", user != null ? user.getId() : "unknown");
             throw new IllegalArgumentException("Login failed");
         }
 
@@ -194,6 +203,23 @@ public class AuthService {
             .build();
         auditLogRepository.save(successLog);
 
+        log.info("Login succeeded for user {}", user.getId());
         return rawToken;
+    }
+
+    public Optional<UUID> validateSession(String rawToken)
+    {
+        if(rawToken == null || rawToken.isBlank())
+        {
+            return Optional.empty();
+        }
+        String tokenHash = hashToken(rawToken);
+        OffsetDateTime now = OffsetDateTime.now();
+
+        return sessionRepository.findByTokenHash(tokenHash)
+            .filter(session -> session.getRevokedAt() == null )
+            .filter(session -> session.getExpiresAt().isAfter(now))
+            .map(session -> session.getUserId());
+        
     }
 }
