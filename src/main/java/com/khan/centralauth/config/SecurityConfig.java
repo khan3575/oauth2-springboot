@@ -32,7 +32,10 @@ public class SecurityConfig {
                     .requestMatchers("/api/auth/register"
                     , "/api/auth/login"
                     , "/api/auth/verify-email"
-                    , "/error").permitAll()
+                    , "/error"
+                    , "/v3/api-docs/**"
+                    , "/swagger-ui/**"
+                    , "/swagger-ui.html").permitAll()
                     .requestMatchers("/api/auth/logout").authenticated()
                     .anyRequest().authenticated()
             )
