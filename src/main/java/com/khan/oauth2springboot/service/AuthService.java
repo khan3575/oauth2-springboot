@@ -113,7 +113,7 @@ public class AuthService {
     }
 
 
-    private String hashToken(String rawToken) {
+    public String hashToken(String rawToken) {
         
         try{
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
