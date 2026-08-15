@@ -1,12 +1,21 @@
 package com.khan.oauth2springboot.config;
 
+import java.util.Collections;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.MediaType;
+import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.Customizer;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.crypto.password4j.Argon2Password4jPasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.Http403ForbiddenEntryPoint;
+import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
+import org.springframework.security.web.util.matcher.AnyRequestMatcher;
+import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 
 import com.password4j.Argon2Function;
 import com.password4j.types.Argon2;
@@ -24,6 +33,11 @@ public class SecurityConfig {
         );
     }
 
+    @Bean
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration) throws Exception {
+        return authenticationConfiguration.getAuthenticationManager();
+    }
+
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http, SessionAuthenticationFilter sessionAuthenticationFilter) throws Exception {
@@ -37,6 +51,7 @@ public class SecurityConfig {
                     ,"/api/auth/reset-password"
                     , "/login"
                     , "/error"
+                    , "/actuator/health"
                     , "/v3/api-docs/**"
                     , "/swagger-ui/**"
                     , "/swagger-ui.html").permitAll()
@@ -44,6 +59,19 @@ public class SecurityConfig {
                     .anyRequest().authenticated()
             )
             .formLogin(Customizer.withDefaults())
+            .exceptionHandling(exceptions -> {
+                MediaTypeRequestMatcher htmlMatcher = new MediaTypeRequestMatcher(MediaType.TEXT_HTML);
+                htmlMatcher.setIgnoredMediaTypes(Collections.singleton(MediaType.ALL));
+                exceptions
+                    .defaultAuthenticationEntryPointFor(
+                        new LoginUrlAuthenticationEntryPoint("/login"),
+                        htmlMatcher
+                    )
+                    .defaultAuthenticationEntryPointFor(
+                        new Http403ForbiddenEntryPoint(),
+                        AnyRequestMatcher.INSTANCE
+                    );
+            })
             .addFilterBefore(sessionAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

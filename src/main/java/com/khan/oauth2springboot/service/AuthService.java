@@ -9,6 +9,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -47,6 +50,7 @@ public class AuthService {
     private final AuditLogService auditLogService;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final EmailService emailService;
+    private final AuthenticationManager authenticationManager;
 
 
     @Transactional
@@ -146,24 +150,19 @@ public class AuthService {
         String normalizedEmail = request.getEmail().trim().toLowerCase();
         OffsetDateTime now = OffsetDateTime.now();
 
-
-        AppUser user = appUserRepository.findByEmail(normalizedEmail).orElseThrow(() -> {
-            
+        AppUser user;
+        try {
+            authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(normalizedEmail, request.getPassword()));
+            user = appUserRepository.findByEmail(normalizedEmail)
+                .orElseThrow(() -> new IllegalStateException("Authenticated user not found: " + normalizedEmail));
+        } catch (AuthenticationException ex) {
             auditLogService.recordIndependent(null, "login_failure", ipAddress, userAgent);
-            log.warn("Login failed for unknown user with email {}", normalizedEmail);
-            throw new IllegalArgumentException("Login failed");
-        });
-        Credential credential = credentialRepository.findByUserIdAndType(user.getId(),CredentialType.PASSWORD).orElse(null);
-
-        boolean passwordMatches = (credential != null && credential.getSecretHash()!= null && passwordEncoder.matches(request.getPassword(), credential.getSecretHash()));
-
-        if(user == null || credential == null || !passwordMatches || user.getStatus() != UserStatus.ACTIVE || !user.getEmailVerified())
-        {
-            auditLogService.recordIndependent(user != null? user.getId(): null, "login_failure", ipAddress, userAgent);
-            log.warn("Login failed for user {}", user != null ? user.getId() : "unknown");
+            log.warn("Login failed for user with email {}", normalizedEmail);
             throw new IllegalArgumentException("Login failed");
         }
 
+        Credential credential = credentialRepository.findByUserIdAndType(user.getId(), CredentialType.PASSWORD)
+            .orElseThrow(() -> new IllegalStateException("Password credential missing for authenticated user: " + user.getId()));
         credential.setLastUsedAt(now);
         credentialRepository.save(credential);
 

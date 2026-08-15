@@ -19,6 +19,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import com.khan.oauth2springboot.dto.RegisterRequest;
@@ -44,6 +45,7 @@ public class AuthServiceTest {
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private AuditLogService auditLogService;
     @Mock private EmailService emailService;
+    @Mock private AuthenticationManager authenticationManager;
 
     @InjectMocks private AuthService authService;
 
