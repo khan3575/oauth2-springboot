@@ -43,6 +43,7 @@ public class AuthServiceTest {
     @Mock private PasswordResetTokenRepository passwordResetTokenRepository;
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private AuditLogService auditLogService;
+    @Mock private EmailService emailService;
 
     @InjectMocks private AuthService authService;
 

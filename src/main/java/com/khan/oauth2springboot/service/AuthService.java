@@ -15,7 +15,9 @@ import org.springframework.stereotype.Service;
 import lombok.extern.slf4j.Slf4j;
 
 import com.khan.oauth2springboot.dto.LoginRequest;
+import com.khan.oauth2springboot.dto.MeResponse;
 import com.khan.oauth2springboot.dto.RegisterRequest;
+import com.khan.oauth2springboot.dto.SessionResponse;
 import com.khan.oauth2springboot.entity.AppUser;
 import com.khan.oauth2springboot.entity.Credential;
 import com.khan.oauth2springboot.entity.EmailVerificationToken;
@@ -42,7 +44,8 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final AuditLogService auditLogService;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
-    
+    private final EmailService emailService;
+
 
 
     public AuthService(AppUserRepository appUserRepository,
@@ -51,7 +54,8 @@ public class AuthService {
                        EmailVerificationTokenRepository emailVerificationTokenRepository,
                        PasswordEncoder passwordEncoder,
                        AuditLogService auditLogService,
-                       PasswordResetTokenRepository passwordResetTokenRepository) {
+                       PasswordResetTokenRepository passwordResetTokenRepository,
+                       EmailService emailService) {
         this.appUserRepository = appUserRepository;
         this.sessionRepository = sessionRepository;
         this.credentialRepository = credentialRepository;
@@ -59,6 +63,7 @@ public class AuthService {
         this.passwordEncoder = passwordEncoder;
         this.auditLogService = auditLogService;
         this.passwordResetTokenRepository = passwordResetTokenRepository;
+        this.emailService = emailService;
     }
 
 
@@ -104,7 +109,7 @@ public class AuthService {
             .build();
 
         emailVerificationTokenRepository.save(emailVerificationToken);
-        log.info("Verification link for {}: /api/auth/verify-email?token={}", normalizedEmail, rawToken);
+        emailService.sendVerificationEmail(normalizedEmail, rawToken);
 
         // now audit loging
         auditLogService.record(user.getId(), "register", null, null);
@@ -241,7 +246,7 @@ public class AuthService {
                     .build();
                 passwordResetTokenRepository.save(passwordResetToken);
 
-                log.info("Password reset link for {}: /api/auth/reset-password?token={}", normalizedEmail, rawToken);
+                emailService.sendPasswordResetEmail(normalizedEmail, rawToken);
                 auditLogService.record(user.getId(), "password_reset_requested", null, null);
             }
         );
@@ -285,6 +290,54 @@ public class AuthService {
 
         auditLogService.record(token.getUserId(), "password_reset_success", null, null);
         log.info("Password reset successful for user {}", token.getUserId());
+    }
+
+    public MeResponse getCurrentUser(UUID userId) {
+        AppUser user = appUserRepository.findById(userId)
+            .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        return new MeResponse(user.getId(), user.getEmail(), user.getEmailVerified(), user.getStatus());
+    }
+
+    @Transactional
+    public void changePassword(UUID userId, String currentPassword, String newPassword, String currentRawToken) {
+        Credential credential = credentialRepository.findByUserIdAndType(userId, CredentialType.PASSWORD)
+            .orElseThrow(() -> new IllegalArgumentException("Password change failed"));
+
+        if (!passwordEncoder.matches(currentPassword, credential.getSecretHash())) {
+            auditLogService.record(userId, "password_change_failed", null, null);
+            throw new IllegalArgumentException("Current password is incorrect");
+        }
+
+        credential.setSecretHash(passwordEncoder.encode(newPassword));
+        credentialRepository.save(credential);
+
+        String currentTokenHash = (currentRawToken != null && !currentRawToken.isBlank()) ? hashToken(currentRawToken) : null;
+        OffsetDateTime now = OffsetDateTime.now();
+        List<Session> sessionsToRevoke = sessionRepository.findAllByUserIdAndRevokedAtIsNull(userId).stream()
+            .filter(session -> currentTokenHash == null || !session.getTokenHash().equals(currentTokenHash))
+            .toList();
+        sessionsToRevoke.forEach(session -> session.setRevokedAt(now));
+        sessionRepository.saveAll(sessionsToRevoke);
+
+        auditLogService.record(userId, "password_changed", null, null);
+        log.info("Password changed for user {}", userId);
+    }
+
+    public List<SessionResponse> listSessions(UUID userId) {
+        return sessionRepository.findAllByUserIdAndRevokedAtIsNull(userId).stream()
+            .map(session -> new SessionResponse(session.getId(), session.getUserAgent(), session.getIpAddress(), session.getCreatedAt(), session.getExpiresAt()))
+            .toList();
+    }
+
+    @Transactional
+    public void revokeSession(UUID userId, UUID sessionId) {
+        Session session = sessionRepository.findById(sessionId)
+            .filter(s -> s.getUserId().equals(userId))
+            .orElseThrow(() -> new IllegalArgumentException("Session not found"));
+
+        session.setRevokedAt(OffsetDateTime.now());
+        sessionRepository.save(session);
+        auditLogService.record(userId, "session_revoked", null, null);
     }
 
 }

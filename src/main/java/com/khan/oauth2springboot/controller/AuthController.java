@@ -1,6 +1,7 @@
 package com.khan.oauth2springboot.controller;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 
 import org.springframework.http.HttpHeaders;
@@ -8,16 +9,22 @@ import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.khan.oauth2springboot.config.CookieUtils;
+import com.khan.oauth2springboot.dto.ChangePasswordRequest;
 import com.khan.oauth2springboot.dto.ForgotPasswordRequest;
 import com.khan.oauth2springboot.dto.LoginRequest;
+import com.khan.oauth2springboot.dto.MeResponse;
 import com.khan.oauth2springboot.dto.RegisterRequest;
 import com.khan.oauth2springboot.dto.RequestPasswordReset;
+import com.khan.oauth2springboot.dto.SessionResponse;
 import com.khan.oauth2springboot.dto.VerifyEmailRequest;
 import com.khan.oauth2springboot.service.AuthService;
 
@@ -76,15 +83,17 @@ public class AuthController {
         return request.getRemoteAddr();
     }
 
+    private UUID currentUserId()
+    {
+        return SecurityContextHolder.getContext().getAuthentication() != null
+            ? (UUID) SecurityContextHolder.getContext().getAuthentication().getPrincipal()
+            : null;
+    }
+
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(HttpServletRequest request)
     {
-        UUID userId = SecurityContextHolder
-            .getContext()
-            .getAuthentication() != null ? (UUID) SecurityContextHolder
-                                                    .getContext()
-                                                    .getAuthentication()
-                                                    .getPrincipal()         : null;
+        UUID userId = currentUserId();
         authService.logout(cookieUtils.extractSessionCookie(request), userId, resolveClientIp(request), request.getHeader("User-Agent"));
         ResponseCookie cleared = ResponseCookie.from("SESSION", "")
             .httpOnly(true)
@@ -106,6 +115,28 @@ public class AuthController {
     @PostMapping("/reset-password")
     public ResponseEntity<Void> resetPassword(@Valid @RequestBody RequestPasswordReset request){
         authService.resetPassword(request.getToken(), request.getNewPassword());
-        return ResponseEntity.ok().build(); 
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/me")
+    public ResponseEntity<MeResponse> me() {
+        return ResponseEntity.ok(authService.getCurrentUser(currentUserId()));
+    }
+
+    @PostMapping("/change-password")
+    public ResponseEntity<Void> changePassword(@Valid @RequestBody ChangePasswordRequest request, HttpServletRequest httpRequest) {
+        authService.changePassword(currentUserId(), request.getCurrentPassword(), request.getNewPassword(), cookieUtils.extractSessionCookie(httpRequest));
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/sessions")
+    public ResponseEntity<List<SessionResponse>> sessions() {
+        return ResponseEntity.ok(authService.listSessions(currentUserId()));
+    }
+
+    @DeleteMapping("/sessions/{id}")
+    public ResponseEntity<Void> revokeSession(@PathVariable UUID id) {
+        authService.revokeSession(currentUserId(), id);
+        return ResponseEntity.ok().build();
     }
 }
