@@ -20,8 +20,10 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import com.khan.oauth2springboot.dto.LoginRequest;
 import com.khan.oauth2springboot.dto.RegisterRequest;
 import com.khan.oauth2springboot.entity.AppUser;
 import com.khan.oauth2springboot.entity.Credential;
@@ -187,7 +189,93 @@ public class AuthServiceTest {
         verify(appUserRepository, never()).findById(any());
     }
 
+    @Test
+    public void login_lockedAccount_rejectsWithoutAttemptingAuthentication() {
+        UUID userId = UUID.randomUUID();
+        AppUser user = AppUser.builder()
+            .id(userId)
+            .email("sakib@gmail.com")
+            .emailVerified(true)
+            .status(UserStatus.ACTIVE)
+            .failedLoginAttempts(5)
+            .lockedUntil(OffsetDateTime.now().plusMinutes(10))
+            .build();
 
+        when(appUserRepository.findByEmail("sakib@gmail.com")).thenReturn(Optional.of(user));
 
+        LoginRequest request = new LoginRequest();
+        request.setEmail("sakib@gmail.com");
+        request.setPassword("correctPassword123");
+
+        assertThrows(IllegalArgumentException.class, () -> authService.login(request, "agent", "127.0.0.1"));
+
+        verify(authenticationManager, never()).authenticate(any());
+        verify(auditLogService).recordIndependent(eq(userId), eq("login_failure_locked"), eq("127.0.0.1"), eq("agent"));
+    }
+
+    @Test
+    public void login_wrongPassword_incrementsAttemptsAndLocksAtThreshold() {
+        UUID userId = UUID.randomUUID();
+        AppUser user = AppUser.builder()
+            .id(userId)
+            .email("sakib@gmail.com")
+            .emailVerified(true)
+            .status(UserStatus.ACTIVE)
+            .failedLoginAttempts(4)
+            .build();
+
+        when(appUserRepository.findByEmail("sakib@gmail.com")).thenReturn(Optional.of(user));
+        when(authenticationManager.authenticate(any())).thenThrow(new BadCredentialsException("bad credentials"));
+
+        LoginRequest request = new LoginRequest();
+        request.setEmail("sakib@gmail.com");
+        request.setPassword("wrongPassword1");
+
+        assertThrows(IllegalArgumentException.class, () -> authService.login(request, "agent", "127.0.0.1"));
+
+        ArgumentCaptor<AppUser> userCaptor = ArgumentCaptor.forClass(AppUser.class);
+        verify(appUserRepository).save(userCaptor.capture());
+        AppUser saved = userCaptor.getValue();
+        assertThat(saved.getFailedLoginAttempts()).isEqualTo(5);
+        assertThat(saved.getLockedUntil()).isNotNull();
+        assertThat(saved.getLockedUntil()).isAfter(OffsetDateTime.now());
+    }
+
+    @Test
+    public void login_success_resetsFailedAttempts() {
+        UUID userId = UUID.randomUUID();
+        AppUser user = AppUser.builder()
+            .id(userId)
+            .email("sakib@gmail.com")
+            .emailVerified(true)
+            .status(UserStatus.ACTIVE)
+            .failedLoginAttempts(3)
+            .build();
+        Credential credential = Credential.builder()
+            .userId(userId)
+            .type(CredentialType.PASSWORD)
+            .secretHash("hashed-password")
+            .build();
+
+        when(appUserRepository.findByEmail("sakib@gmail.com")).thenReturn(Optional.of(user));
+        when(credentialRepository.findByUserIdAndType(userId, CredentialType.PASSWORD)).thenReturn(Optional.of(credential));
+        when(credentialRepository.save(any(Credential.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        LoginRequest request = new LoginRequest();
+        request.setEmail("sakib@gmail.com");
+        request.setPassword("correctPassword123");
+
+        String rawToken = authService.login(request, "agent", "127.0.0.1");
+
+        assertThat(rawToken).isNotBlank();
+
+        ArgumentCaptor<AppUser> userCaptor = ArgumentCaptor.forClass(AppUser.class);
+        verify(appUserRepository).save(userCaptor.capture());
+        AppUser saved = userCaptor.getValue();
+        assertThat(saved.getFailedLoginAttempts()).isZero();
+        assertThat(saved.getLockedUntil()).isNull();
+
+        verify(auditLogService).record(eq(userId), eq("login_success"), eq("127.0.0.1"), eq("agent"));
+    }
 
 }

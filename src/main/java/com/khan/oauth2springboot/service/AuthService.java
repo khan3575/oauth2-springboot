@@ -3,6 +3,7 @@ package com.khan.oauth2springboot.service;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.HexFormat;
 import java.util.List;
@@ -42,6 +43,9 @@ import jakarta.transaction.Transactional;
 @Service
 @RequiredArgsConstructor
 public class AuthService {
+    private static final int MAX_FAILED_LOGIN_ATTEMPTS = 5;
+    private static final Duration ACCOUNT_LOCK_DURATION = Duration.ofMinutes(15);
+
     private final AppUserRepository appUserRepository;
     private final SessionRepository sessionRepository;
     private final CredentialRepository credentialRepository;
@@ -150,19 +154,34 @@ public class AuthService {
         String normalizedEmail = request.getEmail().trim().toLowerCase();
         OffsetDateTime now = OffsetDateTime.now();
 
+        Optional<AppUser> existingUser = appUserRepository.findByEmail(normalizedEmail);
+        if (existingUser.isPresent() && isLocked(existingUser.get(), now)) {
+            auditLogService.recordIndependent(existingUser.get().getId(), "login_failure_locked", ipAddress, userAgent);
+            log.warn("Login attempted on locked account {}", normalizedEmail);
+            throw new IllegalArgumentException("Login failed");
+        }
+
         AppUser user;
         try {
             authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(normalizedEmail, request.getPassword()));
-            user = appUserRepository.findByEmail(normalizedEmail)
+            user = existingUser
                 .orElseThrow(() -> new IllegalStateException("Authenticated user not found: " + normalizedEmail));
         } catch (AuthenticationException ex) {
+            existingUser.ifPresent(this::registerFailedLoginAttempt);
             auditLogService.recordIndependent(null, "login_failure", ipAddress, userAgent);
             log.warn("Login failed for user with email {}", normalizedEmail);
             throw new IllegalArgumentException("Login failed");
         }
 
-        Credential credential = credentialRepository.findByUserIdAndType(user.getId(), CredentialType.PASSWORD)
-            .orElseThrow(() -> new IllegalStateException("Password credential missing for authenticated user: " + user.getId()));
+        if (user.getFailedLoginAttempts() != 0 || user.getLockedUntil() != null) {
+            user.setFailedLoginAttempts(0);
+            user.setLockedUntil(null);
+            appUserRepository.save(user);
+        }
+
+        UUID userId = user.getId();
+        Credential credential = credentialRepository.findByUserIdAndType(userId, CredentialType.PASSWORD)
+            .orElseThrow(() -> new IllegalStateException("Password credential missing for authenticated user: " + userId));
         credential.setLastUsedAt(now);
         credentialRepository.save(credential);
 
@@ -180,6 +199,19 @@ public class AuthService {
 
         log.info("Login succeeded for user {}", user.getId());
         return rawToken;
+    }
+
+    private boolean isLocked(AppUser user, OffsetDateTime now) {
+        return user.getLockedUntil() != null && user.getLockedUntil().isAfter(now);
+    }
+
+    private void registerFailedLoginAttempt(AppUser user) {
+        int attempts = user.getFailedLoginAttempts() + 1;
+        user.setFailedLoginAttempts(attempts);
+        if (attempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
+            user.setLockedUntil(OffsetDateTime.now().plus(ACCOUNT_LOCK_DURATION));
+        }
+        appUserRepository.save(user);
     }
 
     public Optional<UUID> validateSession(String rawToken) {

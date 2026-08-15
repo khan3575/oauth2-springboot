@@ -7,9 +7,12 @@ import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcOperations;
 import org.springframework.security.config.Customizer;
@@ -39,10 +42,14 @@ import com.nimbusds.jose.proc.SecurityContext;
 public class AuthorizationServerConfig {
 
     @Bean
-    public RegisteredClientRepository registeredClientRepository(JdbcOperations jdbcOperations) {
+    public RegisteredClientRepository registeredClientRepository(JdbcOperations jdbcOperations, Environment environment) {
         JdbcRegisteredClientRepository repository = new JdbcRegisteredClientRepository(jdbcOperations);
 
-        if (repository.findByClientId("test-client") == null) {
+        // The Postman test client is a convenience for local/dev exploration only —
+        // it must never be seeded into a production client table (unauthenticated
+        // public client, anyone who learns the client_id can use it).
+        boolean isProd = environment.acceptsProfiles(Profiles.of("prod"));
+        if (!isProd && repository.findByClientId("test-client") == null) {
             RegisteredClient testClient = RegisteredClient.withId(UUID.randomUUID().toString())
                     .clientId("test-client")
                     .clientAuthenticationMethod(ClientAuthenticationMethod.NONE)
@@ -87,9 +94,9 @@ public class AuthorizationServerConfig {
     }
 
     @Bean
-    public AuthorizationServerSettings authorizationServerSettings() {
+    public AuthorizationServerSettings authorizationServerSettings(@Value("${app.base-url}") String baseUrl) {
         return AuthorizationServerSettings.builder()
-                .issuer("http://localhost:8080")
+                .issuer(baseUrl)
                 .build();
     }
 

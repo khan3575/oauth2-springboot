@@ -43,6 +43,13 @@ public class AppUser{
     @Column(name="status", nullable=false)
     private UserStatus status;
 
+    @Builder.Default
+    @Column(name="failed_login_attempts", nullable=false)
+    private Integer failedLoginAttempts = 0;
+
+    @Column(name="locked_until")
+    private OffsetDateTime lockedUntil;
+
     @CreationTimestamp
     @Column(name="created_at", nullable=false, updatable=false)  
     private OffsetDateTime createdAt;

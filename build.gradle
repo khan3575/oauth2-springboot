@@ -19,7 +19,6 @@ repositories {
 }
 
 dependencies {
-    implementation 'org.springframework.boot:spring-boot-h2console'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-flyway'
@@ -32,8 +31,11 @@ dependencies {
     // Source: https://mvnrepository.com/artifact/com.password4j/password4j
     implementation("com.password4j:password4j:1.8.4")
     compileOnly 'org.projectlombok:lombok'
+    // H2 is for local dev/test only — kept out of the prod jar (bootJar excludes
+    // developmentOnly) since prod always runs against real PostgreSQL.
     developmentOnly 'org.springframework.boot:spring-boot-devtools'
-    runtimeOnly 'com.h2database:h2'
+    developmentOnly 'org.springframework.boot:spring-boot-h2console'
+    developmentOnly 'com.h2database:h2'
     runtimeOnly 'org.postgresql:postgresql'
     runtimeOnly 'org.flywaydb:flyway-database-postgresql'
     annotationProcessor 'org.projectlombok:lombok'
@@ -43,6 +45,7 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-validation-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
     testCompileOnly 'org.projectlombok:lombok'
+    testRuntimeOnly 'com.h2database:h2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testAnnotationProcessor 'org.projectlombok:lombok'
 }

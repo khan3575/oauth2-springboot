@@ -42,3 +42,6 @@ local_doc/
 ## log files
 
 logs/
+
+### Local secrets ###
+.env
