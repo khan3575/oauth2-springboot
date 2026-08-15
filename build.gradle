@@ -6,7 +6,7 @@ plugins {
 
 group = 'com.khan'
 version = '0.0.1-SNAPSHOT'
-description = 'central-auth'
+description = 'OAuth2/OIDC authentication provider built with Spring Boot'
 
 java {
     toolchain {

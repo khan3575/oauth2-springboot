@@ -1,4 +1,4 @@
-# central-auth
+# OAuth2 Spring Boot
 
 Central authentication/identity microservice. Built as a standards-based
 OAuth2/OIDC provider so other applications authenticate against it instead
@@ -53,9 +53,9 @@ local database — check `application.properties` for the enabled path.
 ## Project structure
 
 ```
-src/main/java/com/khan/centralauth/   application code
-src/main/resources/                   config, Flyway migrations
-src/test/java/com/khan/centralauth/   tests
+src/main/java/com/khan/oauth2springboot/   application code
+src/main/resources/                        config, Flyway migrations
+src/test/java/com/khan/oauth2springboot/   tests
 ```
 
 ## Configuration
