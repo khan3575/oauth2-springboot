@@ -14,8 +14,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.khan.oauth2springboot.config.CookieUtils;
+import com.khan.oauth2springboot.dto.ForgotPasswordRequest;
 import com.khan.oauth2springboot.dto.LoginRequest;
 import com.khan.oauth2springboot.dto.RegisterRequest;
+import com.khan.oauth2springboot.dto.RequestPasswordReset;
 import com.khan.oauth2springboot.dto.VerifyEmailRequest;
 import com.khan.oauth2springboot.service.AuthService;
 
@@ -92,5 +94,18 @@ public class AuthController {
             .maxAge(0)
             .build();
         return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, cleared.toString()).build();
+    }
+
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<Void> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request){
+        authService.requestPasswordReset(request.getEmail());
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<Void> resetPassword(@Valid @RequestBody RequestPasswordReset request){
+        authService.resetPassword(request.getToken(), request.getNewPassword());
+        return ResponseEntity.ok().build(); 
     }
 }
