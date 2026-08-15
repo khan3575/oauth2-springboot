@@ -30,17 +30,14 @@ import com.khan.oauth2springboot.service.AuthService;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequestMapping("/api/auth")
+@RequiredArgsConstructor
 public class AuthController {
     private final AuthService authService;
     private final CookieUtils cookieUtils;
-
-    public AuthController(AuthService authService, CookieUtils cookieUtils) {
-        this.authService = authService;
-        this.cookieUtils = cookieUtils;
-    }
 
     @PostMapping("/register")
     public ResponseEntity<Void> register(@Valid @RequestBody RegisterRequest request) {

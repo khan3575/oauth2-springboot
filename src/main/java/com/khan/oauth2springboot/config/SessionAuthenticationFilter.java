@@ -15,15 +15,13 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 
 @Component
+@RequiredArgsConstructor
 public class SessionAuthenticationFilter extends OncePerRequestFilter {
     private final AuthService authService;
     private final CookieUtils cookieUtils;
-    public SessionAuthenticationFilter(AuthService authService, CookieUtils cookieUtils) {
-        this.authService = authService;
-        this.cookieUtils = cookieUtils;
-    }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request

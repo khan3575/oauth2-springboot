@@ -2,6 +2,7 @@ package com.khan.oauth2springboot.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.crypto.password4j.Argon2Password4jPasswordEncoder;
@@ -34,6 +35,7 @@ public class SecurityConfig {
                     , "/api/auth/verify-email"
                     ,"/api/auth/forgot-password"
                     ,"/api/auth/reset-password"
+                    , "/login"
                     , "/error"
                     , "/v3/api-docs/**"
                     , "/swagger-ui/**"
@@ -41,8 +43,9 @@ public class SecurityConfig {
                     .requestMatchers("/api/auth/logout").authenticated()
                     .anyRequest().authenticated()
             )
+            .formLogin(Customizer.withDefaults())
             .addFilterBefore(sessionAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
-            
+
         return http.build();
     }
 

@@ -10,14 +10,12 @@ import com.khan.oauth2springboot.repository.AuditLogRepository;
 
 import org.springframework.transaction.annotation.Transactional;
 
+import lombok.RequiredArgsConstructor;
 
 @Service
+@RequiredArgsConstructor
 public class AuditLogService {
     private final AuditLogRepository auditLogRepository;
-
-    public AuditLogService(AuditLogRepository auditLogRepository) {
-        this.auditLogRepository = auditLogRepository;
-    }
 
     @Transactional
     public void record(UUID userId, String eventType, String ipAddress, String userAgent)

@@ -12,6 +12,7 @@ import java.util.UUID;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import com.khan.oauth2springboot.dto.LoginRequest;
@@ -36,6 +37,7 @@ import jakarta.transaction.Transactional;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class AuthService {
     private final AppUserRepository appUserRepository;
     private final SessionRepository sessionRepository;
@@ -45,26 +47,6 @@ public class AuthService {
     private final AuditLogService auditLogService;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final EmailService emailService;
-
-
-
-    public AuthService(AppUserRepository appUserRepository,
-                       SessionRepository sessionRepository,
-                       CredentialRepository credentialRepository,
-                       EmailVerificationTokenRepository emailVerificationTokenRepository,
-                       PasswordEncoder passwordEncoder,
-                       AuditLogService auditLogService,
-                       PasswordResetTokenRepository passwordResetTokenRepository,
-                       EmailService emailService) {
-        this.appUserRepository = appUserRepository;
-        this.sessionRepository = sessionRepository;
-        this.credentialRepository = credentialRepository;
-        this.emailVerificationTokenRepository = emailVerificationTokenRepository;
-        this.passwordEncoder = passwordEncoder;
-        this.auditLogService = auditLogService;
-        this.passwordResetTokenRepository = passwordResetTokenRepository;
-        this.emailService = emailService;
-    }
 
 
     @Transactional
