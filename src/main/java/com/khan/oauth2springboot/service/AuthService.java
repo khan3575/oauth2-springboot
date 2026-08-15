@@ -5,6 +5,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -18,12 +19,14 @@ import com.khan.oauth2springboot.dto.RegisterRequest;
 import com.khan.oauth2springboot.entity.AppUser;
 import com.khan.oauth2springboot.entity.Credential;
 import com.khan.oauth2springboot.entity.EmailVerificationToken;
+import com.khan.oauth2springboot.entity.PasswordResetToken;
 import com.khan.oauth2springboot.entity.Session;
 import com.khan.oauth2springboot.entity.enums.CredentialType;
 import com.khan.oauth2springboot.entity.enums.UserStatus;
 import com.khan.oauth2springboot.repository.AppUserRepository;
 import com.khan.oauth2springboot.repository.CredentialRepository;
 import com.khan.oauth2springboot.repository.EmailVerificationTokenRepository;
+import com.khan.oauth2springboot.repository.PasswordResetTokenRepository;
 import com.khan.oauth2springboot.repository.SessionRepository;
 
 import jakarta.transaction.Transactional;
@@ -38,6 +41,7 @@ public class AuthService {
     private final EmailVerificationTokenRepository emailVerificationTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuditLogService auditLogService;
+    private final PasswordResetTokenRepository passwordResetTokenRepository;
     
 
 
@@ -46,13 +50,15 @@ public class AuthService {
                        CredentialRepository credentialRepository,
                        EmailVerificationTokenRepository emailVerificationTokenRepository,
                        PasswordEncoder passwordEncoder,
-                       AuditLogService auditLogService) {
+                       AuditLogService auditLogService,
+                       PasswordResetTokenRepository passwordResetTokenRepository) {
         this.appUserRepository = appUserRepository;
         this.sessionRepository = sessionRepository;
         this.credentialRepository = credentialRepository;
         this.emailVerificationTokenRepository = emailVerificationTokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.auditLogService = auditLogService;
+        this.passwordResetTokenRepository = passwordResetTokenRepository;
     }
 
 
@@ -219,5 +225,66 @@ public class AuthService {
         log.info("Logout succeeded for user {}", userId);
     }
 
+    @Transactional
+    public void requestPasswordReset(String email) {
+        String normalizedEmail = email.trim().toLowerCase();
+        OffsetDateTime now = OffsetDateTime.now();
+
+        appUserRepository.findByEmail(normalizedEmail).ifPresent(
+            user -> {
+                String rawToken = UUID.randomUUID().toString();
+
+                PasswordResetToken passwordResetToken = PasswordResetToken.builder()
+                    .userId(user.getId())
+                    .tokenHash(hashToken(rawToken))
+                    .expiresAt(now.plusHours(1))
+                    .build();
+                passwordResetTokenRepository.save(passwordResetToken);
+
+                log.info("Password reset link for {}: /api/auth/reset-password?token={}", normalizedEmail, rawToken);
+                auditLogService.record(user.getId(), "password_reset_requested", null, null);
+            }
+        );
+    }
+
+    @Transactional
+    public void resetPassword(String rawToken, String newPassword){
+        String tokenHash = hashToken(rawToken);
+        OffsetDateTime now = OffsetDateTime.now();
+
+        PasswordResetToken token = passwordResetTokenRepository.findByTokenHash(tokenHash)
+            .orElseThrow(() -> {
+                log.warn("Password reset attempted with an invalid token");
+                auditLogService.recordIndependent(null, "password_reset_failed", null, null);
+                throw new IllegalArgumentException("Invalid password reset token");
+            });
+        if(token.getExpiresAt().isBefore(now) || token.getUsedAt() != null)
+        {
+            log.warn("Password reset attempted with an expired or already used token");
+            auditLogService.recordIndependent(token.getUserId(), "password_reset_failed", null, null);
+            throw new IllegalArgumentException("Invalid password reset token");
+        }
+
+        Credential credential = credentialRepository.findByUserIdAndType(token.getUserId(), CredentialType.PASSWORD)
+            .orElseThrow(() -> {
+                log.warn("Password reset attempted for a user without a password credential");
+                auditLogService.recordIndependent(token.getUserId(), "password_reset_failed", null, null);
+                throw new IllegalArgumentException("User does not have a password credential");
+            });
+
+        credential.setSecretHash(passwordEncoder.encode(newPassword));
+        credentialRepository.save(credential);
+
+        token.setUsedAt(now);
+        passwordResetTokenRepository.save(token);
+
+        List<Session> activeSessions = sessionRepository.findAllByUserIdAndRevokedAtIsNull(token.getUserId());
+
+        activeSessions.forEach(session -> session.setRevokedAt(now));
+        sessionRepository.saveAll(activeSessions);
+
+        auditLogService.record(token.getUserId(), "password_reset_success", null, null);
+        log.info("Password reset successful for user {}", token.getUserId());
+    }
 
 }
