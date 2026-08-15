@@ -1,6 +1,6 @@
 # OAuth2 Spring Boot
 
-Central authentication/identity microservice. Built as a standards-based
+Centralized authentication/identity microservice. Built as a standards-based
 OAuth2/OIDC provider so other applications authenticate against it instead
 of each implementing their own login.
 
